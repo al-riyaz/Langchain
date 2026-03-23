@@ -7,8 +7,9 @@ from langchain_core.prompts import (
 from langchain_core.messages import SystemMessage
 from langchain.tools import tool
 from langchain.agents import create_agent
-
-
+import math
+from typing import Any
+from langgraph.checkpoint.memory import InMemorySaver
 from dotenv import load_dotenv
 from keys import get_api_key
 import json
@@ -238,7 +239,76 @@ def demo_langchain_agents_multiple_tools():
             print("Tool was called:", msg.tool_calls)
 
     ssl._create_default_https_context=ssl._create_default_https_context
-     
+
+def demo_conversational_memory_agents():
+
+    model = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash",
+        google_api_key=get_api_key(),
+        temperature=0,
+    )
+    
+    @tool
+    def llm_math(expression: str) -> str:
+        """Evaluate a basic arithmetic expression."""
+        allowed = set("0123456789+-*/(). ")
+        if not set(expression) <= allowed:
+            raise ValueError("Unsupported characters in expression.")
+        return str(eval(expression, {"__builtins__": {}}, {}))
+        
+    checkpointer = InMemorySaver()
+
+    agent = create_agent(
+        model=model,
+        tools=[llm_math],
+        system_prompt=(
+            "You are a helpful assistant. "
+            "When arithmetic is needed, use the llm_math tool."
+        ),
+        checkpointer=checkpointer,
+    )
+
+    thread_id = "demo-thread-1"
+    config = {"configurable": {"thread_id": thread_id}}
+
+    # Turn 1
+    result1 = agent.invoke(
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "My favorite number is 12. Please remember it.",
+                }
+            ]
+        },
+        config=config,
+    )
+    print("Turn 1:")
+    print(result1["messages"][-1].content)
+
+    # Turn 2
+    result2 = agent.invoke(
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "What is my favorite number raised to the power of 2.5?",
+                }
+            ]
+        },
+        config=config,
+    )
+    print("\nTurn 2:")
+    print(result2["messages"][-1].content)
+
+    # Optional: print message history stored in state
+    state = agent.get_state(config)
+    print("\nStored conversation messages:")
+    for msg in state.values["messages"]:
+        try:
+            print(f"- {msg.type}: {msg.content}")
+        except Exception:
+            print(msg)
 
 def main():
     # print(demosimple1.__doc__)
@@ -259,8 +329,11 @@ def main():
     #print(demo_langchain_agents_tools.__doc__)
     #demo_langchain_agents_tools()
 
-    print(demo_langchain_agents_multiple_tools.__doc__)
-    demo_langchain_agents_multiple_tools()
+    #print(demo_langchain_agents_multiple_tools.__doc__)
+    #demo_langchain_agents_multiple_tools()
+
+    print(demo_conversational_memory_agents.__doc__)
+    demo_conversational_memory_agents()
 
 
 if __name__ == "__main__":
